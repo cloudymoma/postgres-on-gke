@@ -1,0 +1,18 @@
+# Demo profile: single instance, small footprint, no backups.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ${PG_CLUSTER}
+  namespace: ${NAMESPACE}
+spec:
+  instances: 1
+  imageName: ${PG_IMAGE}
+  storage:
+    size: 5Gi
+    storageClass: standard-rwo
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 1Gi

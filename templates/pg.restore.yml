@@ -1,0 +1,87 @@
+# Point-in-time recovery: bootstraps a NEW cluster from the GCS backups of
+# ${PG_CLUSTER}. Uncomment recoveryTarget to restore to a moment in time
+# instead of the latest available WAL.
+#
+# Before applying, grant the new cluster's service account access to GCS:
+#   PG_CLUSTER=${PG_CLUSTER}-restored ./bin/gcs_backup.sh setup
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ${PG_CLUSTER}-restored
+  namespace: ${NAMESPACE}
+spec:
+  instances: 3
+  imageName: ${PG_IMAGE}
+
+  # Workload Identity: pods run as the K8s SA named after the cluster;
+  # this annotation maps it to the GSA created by bin/gcs_backup.sh.
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: ${GSA_EMAIL}
+
+  # One pod per physical GKE node (host exclusivity) + even spread across zones.
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: required
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          cnpg.io/cluster: ${PG_CLUSTER}-restored
+
+  # Sized to maximize c4-highmem-4 (4 vCPU, 31 GiB RAM).
+  # Matching requests == limits grants Kubernetes "Guaranteed" QoS class,
+  # preventing the Linux OOM killer from terminating the database under pressure.
+  resources:
+    requests:
+      cpu: "3"
+      memory: 24Gi
+    limits:
+      cpu: "3"
+      memory: 24Gi
+
+  postgresql:
+    parameters:
+      # Memory configuration for 24Gi container limit:
+      shared_buffers: 6GB                  # 25% of RAM
+      effective_cache_size: 18GB           # 75% of RAM (informs query planner of OS cache)
+      work_mem: 32MB                       # Per-sort/hash memory; safe for 200 connections
+      maintenance_work_mem: 1GB            # Accelerates VACUUM, CREATE INDEX, and restore
+      wal_buffers: 16MB                    # Max standard WAL buffer to prevent write stalls
+      checkpoint_completion_target: "0.9"  # Smooths out disk I/O on Hyperdisk Balanced
+      random_page_cost: "1.1"              # Optimized for SSD/Hyperdisk low-latency reads
+      max_connections: "200"
+
+  bootstrap:
+    recovery:
+      source: origin
+      # recoveryTarget:
+      #   targetTime: "2026-09-01 12:00:00+00"
+
+  externalClusters:
+    - name: origin
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: ${PG_CLUSTER}-gcs
+          serverName: ${PG_CLUSTER}
+
+  # Re-enable WAL archiving for the restored cluster (it archives under its
+  # own serverName, so it does not overwrite the origin's backups).
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: ${PG_CLUSTER}-gcs
+
+  storage:
+    size: 100Gi
+    storageClass: hyperdisk-balanced
+  walStorage:
+    size: 20Gi
+    storageClass: hyperdisk-balanced

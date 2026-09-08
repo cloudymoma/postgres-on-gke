@@ -1,0 +1,75 @@
+# Rendered by run.sh with envsubst. One Job per test run.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: pgstress
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: pgstress
+        job-name: ${JOB_NAME}
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      # Keep the load generator off the database nodes so it doesn't steal their CPU.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    cnpg.io/cluster: ${PG_CLUSTER}
+      containers:
+        - name: pgstress
+          image: ${IMAGE}
+          imagePullPolicy: Always
+          args:
+            - run
+            - -scenario=/scenarios/scenario.yaml
+            - -out=/out
+            - -rw-host=${PG_CLUSTER}-rw
+            - -ro-host=${PG_CLUSTER}-ro
+            - -prepare
+            - -cleanup
+            - -hold=15m
+          env:
+            - name: PGUSER
+              valueFrom: {secretKeyRef: {name: ${PG_CLUSTER}-app, key: username}}
+            - name: PGPASSWORD
+              valueFrom: {secretKeyRef: {name: ${PG_CLUSTER}-app, key: password}}
+            - name: PGDATABASE
+              valueFrom: {secretKeyRef: {name: ${PG_CLUSTER}-app, key: dbname}}
+            - name: PGSSLMODE
+              value: require
+            - name: GOMAXPROCS
+              valueFrom: {resourceFieldRef: {resource: limits.cpu}}
+          resources:
+            requests:
+              cpu: ${CPU}
+              memory: ${MEMORY}
+            limits:
+              cpu: ${CPU}
+              memory: ${MEMORY}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: scenario, mountPath: /scenarios, readOnly: true}
+            - {name: out, mountPath: /out}
+      volumes:
+        - name: scenario
+          configMap: {name: ${JOB_NAME}-scenario}
+        - name: out
+          emptyDir: {}

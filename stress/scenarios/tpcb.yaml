@@ -1,0 +1,11 @@
+# Built-in pgbench-style TPC-B transaction (all writes go to the primary).
+# Ramp: find where tx/s flattens and p99 climbs.
+name: tpcb-ramp
+prepare: tpcb
+scale: 10                 # 1M accounts, ~150 MB
+stages:
+  - {workers: 10,  duration: 60s}
+  - {workers: 25,  duration: 60s}
+  - {workers: 50,  duration: 60s}
+  - {workers: 100, duration: 90s}
+  - {workers: 200, duration: 90s}

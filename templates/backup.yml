@@ -1,0 +1,33 @@
+# Backup target (GCS via Workload Identity) + daily scheduled base backup.
+# WAL archiving is continuous, so point-in-time recovery is available
+# between base backups.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: ${PG_CLUSTER}-gcs
+  namespace: ${NAMESPACE}
+spec:
+  retentionPolicy: "30d"
+  configuration:
+    destinationPath: gs://${GCS_BUCKET}/
+    googleCredentials:
+      gkeEnvironment: true
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: ${PG_CLUSTER}-daily
+  namespace: ${NAMESPACE}
+spec:
+  # 6-field cron (seconds first): daily at 02:00 UTC
+  schedule: "0 0 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: ${PG_CLUSTER}
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io

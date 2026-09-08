@@ -1,0 +1,18 @@
+# PgBouncer connection pooler in front of the primary (read-write).
+# Applications connect to ${PG_CLUSTER}-pooler-rw:5432 instead of the
+# cluster service when they need many short-lived connections.
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: ${PG_CLUSTER}-pooler-rw
+  namespace: ${NAMESPACE}
+spec:
+  cluster:
+    name: ${PG_CLUSTER}
+  instances: 2
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      max_client_conn: "1000"
+      default_pool_size: "50"

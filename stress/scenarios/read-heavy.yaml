@@ -1,0 +1,24 @@
+# 90/10 read/write mix. Reads go to the -ro service, so adding replicas
+# (./bin/pg.sh scale N) should raise read throughput; writes stay on the primary.
+name: read-heavy
+prepare: tpcb
+scale: 10
+stages:
+  - {workers: 20,  duration: 60s}
+  - {workers: 80,  duration: 60s}
+  - {workers: 200, duration: 90s}
+  - {workers: 400, duration: 90s}
+statements:
+  - name: point-read
+    weight: 90
+    target: ro
+    sql: SELECT abalance FROM pgstress.accounts WHERE aid = $1
+    args:
+      - {name: aid, type: int, min: 1, max_per_scale: 100000}
+  - name: balance-update
+    weight: 10
+    target: rw
+    sql: UPDATE pgstress.accounts SET abalance = abalance + $1 WHERE aid = $2
+    args:
+      - {name: delta, type: int, min: -5000, max: 5000}
+      - {name: aid,   type: int, min: 1, max_per_scale: 100000}

@@ -1,0 +1,28 @@
+# Template for testing your own schema. prepare: none means pgstress
+# creates nothing; the tables below must already exist in the database.
+name: my-app
+prepare: none
+sample_interval: 5s
+statement_timeout: 10s
+stages:
+  - {workers: 5,  duration: 30s}
+  - {workers: 20, duration: 60s}
+statements:
+  - name: lookup-by-status
+    weight: 70
+    target: ro
+    sql: SELECT id, created_at FROM orders WHERE status = $1 ORDER BY created_at DESC LIMIT 20
+    args:
+      - {name: status, type: choice, choices: [new, paid, shipped]}
+
+  - name: place-order            # multi-query transaction; params reference args by name
+    weight: 30
+    target: rw
+    args:
+      - {name: customer, type: int, min: 1, max: 50000}
+      - {name: amount,   type: int, min: 100, max: 99999}
+    queries:
+      - sql: INSERT INTO orders (customer_id, status, amount_cents) VALUES ($1, 'new', $2)
+        params: [customer, amount]
+      - sql: UPDATE customers SET order_count = order_count + 1 WHERE id = $1
+        params: [customer]
