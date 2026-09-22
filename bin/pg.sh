@@ -69,6 +69,18 @@ psql_primary() {
 
 scale() {
   local n="$1"
+  local anti_type topo_key nodes
+  anti_type=$(kubectl -n "$NAMESPACE" get cluster "$PG_CLUSTER" -o jsonpath='{.spec.affinity.podAntiAffinityType}' 2>/dev/null || true)
+  topo_key=$(kubectl -n "$NAMESPACE" get cluster "$PG_CLUSTER" -o jsonpath='{.spec.affinity.topologyKey}' 2>/dev/null || true)
+  if [[ "$anti_type" == "required" && ( -z "$topo_key" || "$topo_key" == "kubernetes.io/hostname" ) ]]; then
+    nodes=$(kubectl get nodes --no-headers 2>/dev/null | awk '$2 ~ /^Ready/ && $2 !~ /SchedulingDisabled/ {c++} END {print c+0}')
+    if (( nodes > 0 && n > nodes )); then
+      echo "ERROR: ${PG_CLUSTER} enforces required host anti-affinity (${topo_key:-kubernetes.io/hostname})," >&2
+      echo "       so ${n} instances require at least ${n} Ready GKE nodes (currently ${nodes})." >&2
+      echo "       Scale the node pool first, e.g.:  ./bin/gke.sh scale $(((n + 2) / 3))" >&2
+      exit 1
+    fi
+  fi
   kubectl -n "$NAMESPACE" patch cluster "$PG_CLUSTER" --type merge \
     -p "{\"spec\":{\"instances\":${n}}}"
   echo "==> Scaled ${PG_CLUSTER} to ${n} instances; watch with: ./bin/pg.sh status"
