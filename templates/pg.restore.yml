@@ -50,7 +50,7 @@ spec:
       # Memory configuration for 24Gi container limit:
       shared_buffers: 6GB                  # 25% of RAM
       effective_cache_size: 18GB           # 75% of RAM (informs query planner of OS cache)
-      work_mem: 32MB                       # Per-sort/hash memory; safe for 200 connections
+      work_mem: 32MB                       # Per sort/hash node (a single query may allocate several nodes)
       maintenance_work_mem: 1GB            # Accelerates VACUUM, CREATE INDEX, and restore
       wal_buffers: 16MB                    # Max standard WAL buffer to prevent write stalls
       checkpoint_completion_target: "0.9"  # Smooths out disk I/O on Hyperdisk Balanced
