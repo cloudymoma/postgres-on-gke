@@ -11,7 +11,7 @@ type Picker struct {
 	total int
 }
 
-// NewPicker builds a picker from positive weights.
+// NewPicker builds a picker from positive weights (enforced by config.Validate).
 func NewPicker(weights []int) *Picker {
 	p := &Picker{cum: make([]int, len(weights))}
 	for i, w := range weights {
@@ -23,7 +23,7 @@ func NewPicker(weights []int) *Picker {
 
 // Pick returns a weighted random index.
 func (p *Picker) Pick(r *rand.Rand) int {
-	if len(p.cum) == 1 {
+	if len(p.cum) <= 1 || p.total <= 0 {
 		return 0
 	}
 	n := r.IntN(p.total)

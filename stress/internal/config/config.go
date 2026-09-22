@@ -146,6 +146,9 @@ func (s *Scenario) Validate() error {
 		if st.Workers < 1 {
 			return fmt.Errorf("stages[%d].workers must be >= 1", i)
 		}
+		if st.Workers > 100_000 {
+			return fmt.Errorf("stages[%d].workers must be <= 100000", i)
+		}
 		if st.Duration <= 0 {
 			return fmt.Errorf("stages[%d].duration must be > 0", i)
 		}

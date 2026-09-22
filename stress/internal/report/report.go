@@ -35,9 +35,18 @@ func Render(w io.Writer, runs []*metrics.Results) error {
 	if err != nil {
 		return err
 	}
-	chart, _ := files.ReadFile("assets/chart.min.js")
-	css, _ := files.ReadFile("assets/style.css")
-	app, _ := files.ReadFile("assets/report.js")
+	chart, err := files.ReadFile("assets/chart.min.js")
+	if err != nil {
+		return err
+	}
+	css, err := files.ReadFile("assets/style.css")
+	if err != nil {
+		return err
+	}
+	app, err := files.ReadFile("assets/report.js")
+	if err != nil {
+		return err
+	}
 	title := "pgstress: " + runs[0].Scenario
 	if len(runs) > 1 {
 		title = fmt.Sprintf("pgstress: %d runs compared", len(runs))
