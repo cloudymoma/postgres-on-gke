@@ -56,6 +56,20 @@ resource "google_storage_bucket" "backups" {
   location                    = var.region
   uniform_bucket_level_access = true
   force_destroy               = false
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+    condition {
+      days_since_noncurrent_time = 35
+      with_state                 = "ARCHIVED"
+    }
+  }
 }
 
 resource "google_service_account" "pg_backup" {

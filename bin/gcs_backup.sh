@@ -12,15 +12,39 @@ source ./config.sh
 require_project
 
 setup() {
+  local err
   echo "==> Creating bucket gs://${GCS_BUCKET}"
-  gcloud storage buckets create "gs://${GCS_BUCKET}" \
-    --project "$PROJECT_ID" --location "$REGION" \
-    --uniform-bucket-level-access 2>/dev/null || echo "    (bucket already exists)"
+  if ! err=$(gcloud storage buckets create "gs://${GCS_BUCKET}" \
+      --project "$PROJECT_ID" --location "$REGION" \
+      --uniform-bucket-level-access 2>&1); then
+    if grep -qiE 'already exists|HTTPError 409' <<<"$err"; then
+      echo "    (bucket already exists)"
+    else
+      echo "$err" >&2; exit 1
+    fi
+  fi
+
+  # Object Versioning + 35d noncurrent expiry keeps deleted backups recoverable
+  # even though Barman retention requires roles/storage.objectAdmin.
+  echo "==> Enabling Object Versioning and 35d noncurrent lifecycle on gs://${GCS_BUCKET}"
+  gcloud storage buckets update "gs://${GCS_BUCKET}" --project "$PROJECT_ID" --versioning >/dev/null
+  local lc_tmp
+  lc_tmp=$(mktemp)
+  cat >"$lc_tmp" <<'EOF'
+{"rule":[{"action":{"type":"Delete"},"condition":{"daysSinceNoncurrentTime":35,"isLive":false}}]}
+EOF
+  gcloud storage buckets update "gs://${GCS_BUCKET}" --project "$PROJECT_ID" --lifecycle-file="$lc_tmp" >/dev/null
+  rm -f "$lc_tmp"
 
   echo "==> Creating service account ${GSA_EMAIL}"
-  gcloud iam service-accounts create "$GSA_NAME" \
-    --project "$PROJECT_ID" --display-name "CloudNativePG backups" 2>/dev/null \
-    || echo "    (service account already exists)"
+  if ! err=$(gcloud iam service-accounts create "$GSA_NAME" \
+      --project "$PROJECT_ID" --display-name "CloudNativePG backups" 2>&1); then
+    if grep -qiE 'already exists|HTTPError 409' <<<"$err"; then
+      echo "    (service account already exists)"
+    else
+      echo "$err" >&2; exit 1
+    fi
+  fi
 
   echo "==> Granting objectAdmin on the bucket"
   gcloud storage buckets add-iam-policy-binding "gs://${GCS_BUCKET}" \
