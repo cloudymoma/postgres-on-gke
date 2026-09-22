@@ -76,3 +76,33 @@ func TestPointClampsLatency(t *testing.T) {
 		t.Fatalf("clamping wrong: %+v", p)
 	}
 }
+
+func TestAggregatorEmptyStage(t *testing.T) {
+	in := make(chan Sample, 16)
+	a := NewAggregator([]string{"x"}, in, time.Hour)
+	go a.Run(time.Now())
+
+	a.SetStage(0, 5)
+	in <- Sample{Stmt: 0, Latency: 10 * time.Millisecond}
+	time.Sleep(20 * time.Millisecond)
+
+	a.SetStage(1, 10) // stage 1 receives zero samples
+	time.Sleep(250 * time.Millisecond)
+
+	a.SetStage(2, 20)
+	in <- Sample{Stmt: 0, Latency: 10 * time.Millisecond}
+	close(in)
+	a.Wait()
+
+	_, _, stages, _ := a.Results(time.Second)
+	if len(stages) != 3 {
+		t.Fatalf("want 3 stages, got %d: %+v", len(stages), stages)
+	}
+	if stages[1].Index != 1 || stages[1].Workers != 10 || stages[1].Count != 0 {
+		t.Fatalf("empty stage 1 wrong: %+v", stages[1])
+	}
+	// Stage 0 (~20ms) must not absorb stage 1's 250ms duration.
+	if stages[0].DurationSec > 0.18 {
+		t.Fatalf("stage 0 absorbed empty stage 1 duration: %v s", stages[0].DurationSec)
+	}
+}

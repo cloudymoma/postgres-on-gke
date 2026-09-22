@@ -99,10 +99,11 @@ type stageAcc struct {
 // Aggregator is the single consumer of worker samples. It owns all
 // histograms, so the hot path needs no locks.
 type Aggregator struct {
-	names []string
-	in    <-chan Sample
-	tick  time.Duration
-	stage atomic.Pointer[stageInfo]
+	names   []string
+	in      <-chan Sample
+	tick    time.Duration
+	stage   atomic.Pointer[stageInfo]
+	stageCh chan stageInfo
 
 	start   time.Time
 	cur     []*acc // current bucket, per statement
@@ -117,7 +118,13 @@ type Aggregator struct {
 // NewAggregator creates an aggregator for the named statements reading
 // from in. tick is the bucket width (1s in production, shorter in tests).
 func NewAggregator(names []string, in <-chan Sample, tick time.Duration) *Aggregator {
-	a := &Aggregator{names: names, in: in, tick: tick, done: make(chan struct{})}
+	a := &Aggregator{
+		names:   names,
+		in:      in,
+		tick:    tick,
+		stageCh: make(chan stageInfo, 256),
+		done:    make(chan struct{}),
+	}
 	a.cur = make([]*acc, len(names))
 	a.overall = make([]*acc, len(names))
 	for i := range names {
@@ -132,7 +139,12 @@ func NewAggregator(names []string, in <-chan Sample, tick time.Duration) *Aggreg
 // SetStage tells the aggregator a new stage has begun. Safe to call from
 // another goroutine.
 func (a *Aggregator) SetStage(index, workers int) {
-	a.stage.Store(&stageInfo{index: index, workers: workers, start: time.Now()})
+	info := stageInfo{index: index, workers: workers, start: time.Now()}
+	a.stage.Store(&info)
+	select {
+	case a.stageCh <- info:
+	case <-a.done:
+	}
 }
 
 // Run consumes samples until in is closed, then finalizes. Call in a goroutine.
@@ -143,16 +155,21 @@ func (a *Aggregator) Run(start time.Time) {
 	defer ticker.Stop()
 	for {
 		select {
+		case info := <-a.stageCh:
+			a.applyStage(info)
 		case s, ok := <-a.in:
 			if !ok {
+				a.drainStages()
 				if a.curTot.h.TotalCount() > 0 || a.curTot.errors > 0 {
 					a.flush(time.Now())
 				}
 				a.closeStage(time.Now())
 				return
 			}
+			a.drainStages()
 			a.record(s)
 		case now := <-ticker.C:
+			a.drainStages()
 			a.flush(now)
 		}
 	}
@@ -161,21 +178,39 @@ func (a *Aggregator) Run(start time.Time) {
 // Wait blocks until Run has finished.
 func (a *Aggregator) Wait() { <-a.done }
 
-func (a *Aggregator) currentStage() *stageAcc {
-	info := a.stage.Load()
-	if info == nil {
-		return nil
+func (a *Aggregator) drainStages() {
+	for {
+		select {
+		case info := <-a.stageCh:
+			a.applyStage(info)
+		default:
+			return
+		}
 	}
+}
+
+func (a *Aggregator) applyStage(info stageInfo) *stageAcc {
 	if n := len(a.stages); n > 0 && a.stages[n-1].info.index == info.index {
 		return a.stages[n-1]
 	}
 	a.closeStage(info.start)
-	st := &stageAcc{info: *info, total: newAcc(), stmts: make([]*acc, len(a.names))}
+	st := &stageAcc{info: info, total: newAcc(), stmts: make([]*acc, len(a.names))}
 	for i := range a.names {
 		st.stmts[i] = newAcc()
 	}
 	a.stages = append(a.stages, st)
 	return st
+}
+
+func (a *Aggregator) currentStage() *stageAcc {
+	if n := len(a.stages); n > 0 {
+		return a.stages[n-1]
+	}
+	info := a.stage.Load()
+	if info == nil {
+		return nil
+	}
+	return a.applyStage(*info)
 }
 
 func (a *Aggregator) closeStage(at time.Time) {
@@ -200,7 +235,10 @@ func (a *Aggregator) record(s Sample) {
 
 func (a *Aggregator) flush(now time.Time) {
 	b := Bucket{T: int(now.Sub(a.start) / a.tick), Total: a.curTot.point(), Stmts: make([]Point, len(a.names))}
-	if info := a.stage.Load(); info != nil {
+	if n := len(a.stages); n > 0 {
+		last := a.stages[n-1].info
+		b.Stage, b.Workers = last.index, last.workers
+	} else if info := a.stage.Load(); info != nil {
 		b.Stage, b.Workers = info.index, info.workers
 	}
 	for i, c := range a.cur {
