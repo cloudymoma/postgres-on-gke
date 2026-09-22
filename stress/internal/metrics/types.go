@@ -81,7 +81,7 @@ type ServerSample struct {
 	TupModifiedPerSec float64         `json:"tupModifiedPerSec"`
 	TempBytesPerSec   float64         `json:"tempBytesPerSec"`
 	WALBytesPerSec    float64         `json:"walBytesPerSec"`
-	Deadlocks         int64           `json:"deadlocks"`
+	Deadlocks         float64         `json:"deadlocks"`
 	Active            int             `json:"active"`
 	Idle              int             `json:"idle"`
 	IdleInTx          int             `json:"idleInTx"`

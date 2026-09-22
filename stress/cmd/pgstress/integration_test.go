@@ -41,7 +41,7 @@ func TestIntegrationEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pool, err := engine.NewPool(ctx, host, 8)
+	pool, err := engine.NewPool(ctx, host, 8, sc.StatementTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}

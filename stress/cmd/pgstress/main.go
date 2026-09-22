@@ -12,8 +12,11 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/binwu/postgres-on-gke/stress/internal/config"
 	"github.com/binwu/postgres-on-gke/stress/internal/engine"
@@ -91,7 +94,7 @@ func cmdPrepare(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	pool, err := engine.NewPool(ctx, *rwHost, 4)
+	pool, err := engine.NewPool(ctx, *rwHost, 4, 0)
 	if err != nil {
 		return err
 	}
@@ -107,13 +110,42 @@ func cmdCleanup(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("cleanup", flag.ExitOnError)
 	rwHost, _ := hostFlags(fs)
 	fs.Parse(args)
-	pool, err := engine.NewPool(ctx, *rwHost, 2)
+	pool, err := engine.NewPool(ctx, *rwHost, 2, 0)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
 	logger.Printf("dropping schema %s", workload.Schema)
 	return workload.Cleanup(ctx, pool)
+}
+
+func checkConnLimit(ctx context.Context, pool *pgxpool.Pool, host string, sc *config.Scenario) error {
+	var mcStr, srStr string
+	if err := pool.QueryRow(ctx, "SHOW max_connections").Scan(&mcStr); err != nil {
+		return fmt.Errorf("query max_connections on %s: %w", host, err)
+	}
+	if err := pool.QueryRow(ctx, "SHOW superuser_reserved_connections").Scan(&srStr); err != nil {
+		return fmt.Errorf("query superuser_reserved_connections on %s: %w", host, err)
+	}
+	maxConns, err := strconv.Atoi(mcStr)
+	if err != nil {
+		return fmt.Errorf("parse max_connections %q on %s: %w", mcStr, host, err)
+	}
+	reserved, err := strconv.Atoi(srStr)
+	if err != nil {
+		return fmt.Errorf("parse superuser_reserved_connections %q on %s: %w", srStr, host, err)
+	}
+	usable := maxConns - reserved
+	needed := sc.MaxWorkers() + 4
+	if needed > usable {
+		return fmt.Errorf(
+			"host %s allows %d non-superuser connections (max_connections=%d, superuser_reserved_connections=%d), "+
+				"but scenario %q requires %d (max workers %d + 4 headroom); "+
+				"remedies: lower stages[].workers or raise max_connections (and re-check work_mem)",
+			host, usable, maxConns, reserved, sc.Name, needed, sc.MaxWorkers(),
+		)
+	}
+	return nil
 }
 
 func cmdRun(ctx context.Context, args []string) error {
@@ -136,15 +168,39 @@ func cmdRun(ctx context.Context, args []string) error {
 	if err := os.MkdirAll(*out, 0o755); err != nil {
 		return err
 	}
+
+	// Admin pool has no statement_timeout so DDL (PrepareTPCB / Cleanup) and
+	// startup connection probes are never cancelled by a tight scenario timeout.
+	admin, err := engine.NewPool(ctx, *rwHost, 2, 0)
+	if err != nil {
+		return err
+	}
+	defer admin.Close()
+
+	if err := checkConnLimit(ctx, admin, *rwHost, sc); err != nil {
+		return err
+	}
+	if *roHost != *rwHost {
+		roProbe, err := engine.NewPool(ctx, *roHost, 1, 0)
+		if err != nil {
+			return err
+		}
+		err = checkConnLimit(ctx, roProbe, *roHost, sc)
+		roProbe.Close()
+		if err != nil {
+			return err
+		}
+	}
+
 	maxConns := sc.MaxWorkers() + 4
-	rw, err := engine.NewPool(ctx, *rwHost, maxConns)
+	rw, err := engine.NewPool(ctx, *rwHost, maxConns, sc.StatementTimeout)
 	if err != nil {
 		return err
 	}
 	defer rw.Close()
 	ro := rw
 	if *roHost != *rwHost {
-		if ro, err = engine.NewPool(ctx, *roHost, maxConns); err != nil {
+		if ro, err = engine.NewPool(ctx, *roHost, maxConns, sc.StatementTimeout); err != nil {
 			return err
 		}
 		defer ro.Close()
@@ -152,7 +208,7 @@ func cmdRun(ctx context.Context, args []string) error {
 
 	if *doPrepare && sc.Prepare == config.PrepareTPCB {
 		logger.Printf("preparing TPC-B schema at scale %d", sc.Scale)
-		if err := workload.PrepareTPCB(ctx, sc.Scale, rw, logger.Printf); err != nil {
+		if err := workload.PrepareTPCB(ctx, sc.Scale, admin, logger.Printf); err != nil {
 			return err
 		}
 	}
@@ -171,7 +227,7 @@ func cmdRun(ctx context.Context, args []string) error {
 
 	if *doCleanup && sc.Prepare == config.PrepareTPCB {
 		cctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		if err := workload.Cleanup(cctx, rw); err != nil {
+		if err := workload.Cleanup(cctx, admin); err != nil {
 			logger.Printf("cleanup failed: %v", err)
 		}
 		cancel()

@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand/v2"
 	"runtime"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -49,13 +50,34 @@ func New(sc *config.Scenario, rw, ro *pgxpool.Pool, logger *log.Logger) (*Engine
 // Run executes every stage and returns the results. ctx cancellation ends
 // the run early but still produces results for what completed.
 func (e *Engine) Run(ctx context.Context) (*metrics.Results, error) {
+	var ruStart syscall.Rusage
+	_ = syscall.Getrusage(syscall.RUSAGE_SELF, &ruStart)
 	start := time.Now()
 	e.samples = make(chan metrics.Sample, 1<<16)
 	e.agg = metrics.NewAggregator(workload.Names(e.stmts), e.samples, time.Second)
 	go e.agg.Run(start)
 
-	smp := sampler.New(e.rw, e.sc.SampleInterval)
 	sctx, stopSampler := context.WithCancel(ctx)
+	var samplerCfg *pgx.ConnConfig
+	var samplerConn *pgx.Conn
+	if e.rw != nil {
+		samplerCfg = e.rw.Config().ConnConfig.Copy()
+		if samplerCfg.RuntimeParams == nil {
+			samplerCfg.RuntimeParams = map[string]string{}
+		}
+		samplerCfg.RuntimeParams["application_name"] = "pgstress-sampler"
+		if e.sc.SampleInterval > 0 {
+			samplerCfg.RuntimeParams["statement_timeout"] = strconv.FormatInt(max(1, e.sc.SampleInterval.Milliseconds()), 10)
+		} else {
+			delete(samplerCfg.RuntimeParams, "statement_timeout")
+		}
+		var err error
+		samplerConn, err = pgx.ConnectConfig(sctx, samplerCfg.Copy())
+		if err != nil {
+			e.log.Printf("sampler connect: %v", err)
+		}
+	}
+	smp := sampler.New(samplerConn, samplerCfg, e.sc.SampleInterval)
 	var sampWG sync.WaitGroup
 	sampWG.Add(1)
 	go func() { defer sampWG.Done(); smp.Run(sctx, start) }()
@@ -106,7 +128,7 @@ stages:
 	}
 	res.Series, res.Statements, res.Stages, res.Overall = e.agg.Results(end.Sub(start))
 	res.Samples, res.SamplerErrors, res.Server = smp.Results()
-	res.Client = clientInfo(end.Sub(start))
+	res.Client = clientInfo(end.Sub(start), &ruStart)
 	return res, runErr
 }
 
@@ -158,7 +180,8 @@ func (e *Engine) exec(ctx context.Context, st *workload.Statement, rng *rand.Ran
 		}
 		return p
 	}
-	qctx, cancel := context.WithTimeout(ctx, e.sc.StatementTimeout)
+	// Safety net for network stalls only; the real limit is server-side.
+	qctx, cancel := context.WithTimeout(ctx, 10*e.sc.StatementTimeout+30*time.Second)
 	defer cancel()
 
 	if len(st.Queries) == 1 {
@@ -171,7 +194,9 @@ func (e *Engine) exec(ctx context.Context, st *workload.Statement, rng *rand.Ran
 	}
 	for _, q := range st.Queries {
 		if _, err := tx.Exec(qctx, q.SQL, bind(q)...); err != nil {
-			_ = tx.Rollback(qctx)
+			rbctx, rbcancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			_ = tx.Rollback(rbctx)
+			rbcancel()
 			return err
 		}
 	}
@@ -183,6 +208,9 @@ func (e *Engine) exec(ctx context.Context, st *workload.Statement, rng *rand.Ran
 func classify(err error) string {
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) {
+		if pe.Code == "57014" { // query_canceled: the server-side statement timeout
+			return "timeout"
+		}
 		return pe.Code
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -191,12 +219,16 @@ func classify(err error) string {
 	return "conn"
 }
 
-func clientInfo(elapsed time.Duration) metrics.ClientInfo {
+func rusageSec(ru *syscall.Rusage) float64 {
+	return float64(ru.Utime.Sec) + float64(ru.Utime.Usec)/1e6 +
+		float64(ru.Stime.Sec) + float64(ru.Stime.Usec)/1e6
+}
+
+func clientInfo(elapsed time.Duration, start *syscall.Rusage) metrics.ClientInfo {
 	ci := metrics.ClientInfo{NumCPU: runtime.NumCPU(), GOMAXPROCS: runtime.GOMAXPROCS(0)}
 	var ru syscall.Rusage
 	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &ru); err == nil {
-		ci.CPUSeconds = float64(ru.Utime.Sec) + float64(ru.Utime.Usec)/1e6 +
-			float64(ru.Stime.Sec) + float64(ru.Stime.Usec)/1e6
+		ci.CPUSeconds = max(0, rusageSec(&ru)-rusageSec(start))
 		if elapsed > 0 {
 			ci.CPUUtilization = ci.CPUSeconds / elapsed.Seconds() / float64(ci.GOMAXPROCS)
 		}
@@ -206,13 +238,25 @@ func clientInfo(elapsed time.Duration) metrics.ClientInfo {
 
 // NewPool opens a pool for host using standard PG* environment variables
 // for the remaining connection parameters.
-func NewPool(ctx context.Context, host string, maxConns int) (*pgxpool.Pool, error) {
+func NewPool(ctx context.Context, host string, maxConns int, stmtTimeout time.Duration) (*pgxpool.Pool, error) {
+	if maxConns < 1 || maxConns > 100_000 {
+		return nil, fmt.Errorf("invalid maxConns %d", maxConns)
+	}
 	cfg, err := pgxpool.ParseConfig(fmt.Sprintf("host=%s application_name=pgstress", host))
 	if err != nil {
 		return nil, err
 	}
 	cfg.MaxConns = int32(maxConns)
 	cfg.ConnConfig.ConnectTimeout = 10 * time.Second
+	// Enforce the statement timeout server-side. Cancelling a client context
+	// mid-query makes pgx close the socket, destroying the pooled connection;
+	// PostgreSQL instead returns 57014 and leaves the session usable.
+	if stmtTimeout > 0 {
+		if cfg.ConnConfig.RuntimeParams == nil {
+			cfg.ConnConfig.RuntimeParams = map[string]string{}
+		}
+		cfg.ConnConfig.RuntimeParams["statement_timeout"] = strconv.FormatInt(max(1, stmtTimeout.Milliseconds()), 10)
+	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
