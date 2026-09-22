@@ -8,7 +8,7 @@
 #   ./run.sh report out/a/results.json out/b/results.json   # compare runs -> report.html
 #   ./run.sh clean                          # delete leftover pgstress Jobs/ConfigMaps
 #
-# Env overrides: IMAGE, CPU (default 2), MEMORY (default 1Gi), KEEP=1 (don't delete the Job).
+# Env overrides: IMAGE, CPU (default 1), CPU_REQUEST (default 500m), MEMORY (default 1Gi), KEEP=1 (don't delete the Job).
 set -euo pipefail
 self="$(realpath "$0")"
 cd "$(dirname "$self")"
@@ -17,9 +17,10 @@ source ../config.sh
 require_project
 
 IMAGE="${IMAGE:-${REGION}-docker.pkg.dev/${PROJECT_ID}/pgstress/pgstress:latest}"
-CPU="${CPU:-2}"
+CPU="${CPU:-1}"
+CPU_REQUEST="${CPU_REQUEST:-500m}"
 MEMORY="${MEMORY:-1Gi}"
-export IMAGE CPU MEMORY
+export IMAGE CPU CPU_REQUEST MEMORY
 
 build() {
   local repo_host="${REGION}-docker.pkg.dev"
@@ -41,8 +42,12 @@ run() {
   local name; name=$(basename "$scenario" .yaml)
   local stamp; stamp=$(date +%Y%m%d-%H%M%S)
   local outdir="${2:-out/${name}-${stamp}}"
-  local JOB_NAME="pgstress-${name}-${stamp}"
-  JOB_NAME=$(echo "$JOB_NAME" | tr '[:upper:]_' '[:lower:]-' | cut -c1-63)
+  # Budget: 'pgstress-' (9) + name + '-' (1) + stamp (15) must be <= 63,
+  # so the name gets at most 38 chars. Truncate the name, never the stamp,
+  # and strip any trailing hyphen the cut may leave behind.
+  local safe_name
+  safe_name=$(echo "$name" | tr '[:upper:]_' '[:lower:]-' | cut -c1-38 | sed 's/-*$//')
+  local JOB_NAME="pgstress-${safe_name}-${stamp}"
   export JOB_NAME
 
   mkdir -p "$outdir"
@@ -50,7 +55,7 @@ run() {
     --from-file=scenario.yaml="$scenario" --dry-run=client -o yaml |
     kubectl -n "$NAMESPACE" label --local -f - app=pgstress -o yaml |
     kubectl -n "$NAMESPACE" apply -f -
-  envsubst '$JOB_NAME $NAMESPACE $PG_CLUSTER $IMAGE $CPU $MEMORY' <k8s/job.yaml | kubectl apply -f -
+  envsubst '$JOB_NAME $NAMESPACE $PG_CLUSTER $IMAGE $CPU $CPU_REQUEST $MEMORY' <k8s/job.yaml | kubectl apply -f -
   echo "==> Job ${JOB_NAME} created; waiting for pod"
 
   local pod=""
@@ -71,8 +76,10 @@ run() {
   fi
 
   echo "==> Copying report to $outdir"
-  kubectl -n "$NAMESPACE" exec "$pod" -- /pgstress cat /out/results.json >"$outdir/results.json"
-  kubectl -n "$NAMESPACE" exec "$pod" -- /pgstress cat /out/report.html >"$outdir/report.html"
+  kubectl -n "$NAMESPACE" exec "$pod" -- /pgstress cat /out/results.json >"$outdir/results.json.tmp"
+  mv "$outdir/results.json.tmp" "$outdir/results.json"
+  kubectl -n "$NAMESPACE" exec "$pod" -- /pgstress cat /out/report.html >"$outdir/report.html.tmp"
+  mv "$outdir/report.html.tmp" "$outdir/report.html"
 
   if [[ "${KEEP:-0}" != "1" ]]; then
     kubectl -n "$NAMESPACE" delete job "$JOB_NAME" --wait=false >/dev/null

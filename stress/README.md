@@ -45,19 +45,20 @@ open out/tpcb-*/report.html
 Then scale the database and run again:
 
 ```bash
+../bin/gke.sh scale 2                # 2 nodes/zone = 6 nodes (required host anti-affinity)
 ../bin/pg.sh scale 5                 # more replicas
 ./run.sh run scenarios/read-heavy.yaml
 ./run.sh report out/read-heavy-*/results.json   # overlays every run in one report
 ```
 
 Options: `CPU=4 MEMORY=2Gi ./run.sh run …` sizes the load-generator pod
-(default 2 CPU / 1 GiB). `KEEP=1` leaves the Job for inspection.
+(default `CPU=1` limit / `CPU_REQUEST=500m` request / `1Gi` RAM). `KEEP=1` leaves the Job for inspection.
 
 ## Scenarios
 
 | File | What it measures |
 |---|---|
-| `scenarios/tpcb.yaml` | pgbench-style TPC-B write transaction on the primary, 10→200 worker ramp |
+| `scenarios/tpcb.yaml` | pgbench-style TPC-B write transaction on the primary, 10→150 worker ramp |
 | `scenarios/read-heavy.yaml` | 90% point reads on `-ro` (replicas), 10% updates on `-rw`; shows replica scaling |
 | `scenarios/custom-example.yaml` | Template for your own schema: `prepare: none`, choice args, multi-query transactions |
 
@@ -68,7 +69,7 @@ name: my-test
 prepare: tpcb | none        # tpcb = create/drop pgstress.* tables at `scale` (100k accounts per unit)
 scale: 10
 sample_interval: 5s         # pg_stat_* poll interval
-statement_timeout: 30s
+statement_timeout: 30s      # enforced server-side per statement (SQLSTATE 57014 -> "timeout")
 stages:                     # a ramp; a single stage is a classic fixed-concurrency benchmark
   - {workers: 10, duration: 60s}
 statements:

@@ -8,4 +8,4 @@ stages:
   - {workers: 25,  duration: 60s}
   - {workers: 50,  duration: 60s}
   - {workers: 100, duration: 90s}
-  - {workers: 200, duration: 90s}
+  - {workers: 150, duration: 90s}

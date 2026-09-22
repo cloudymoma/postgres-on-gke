@@ -5,9 +5,9 @@ prepare: tpcb
 scale: 10
 stages:
   - {workers: 20,  duration: 60s}
-  - {workers: 80,  duration: 60s}
-  - {workers: 200, duration: 90s}
-  - {workers: 400, duration: 90s}
+  - {workers: 50,  duration: 60s}
+  - {workers: 100, duration: 90s}
+  - {workers: 150, duration: 90s}
 statements:
   - name: point-read
     weight: 90

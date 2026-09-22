@@ -56,7 +56,7 @@ spec:
               valueFrom: {resourceFieldRef: {resource: limits.cpu}}
           resources:
             requests:
-              cpu: ${CPU}
+              cpu: ${CPU_REQUEST}
               memory: ${MEMORY}
             limits:
               cpu: ${CPU}
