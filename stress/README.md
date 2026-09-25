@@ -104,6 +104,10 @@ transaction is used.
 
 Errors never abort a run; they are counted per statement by SQLSTATE.
 
+pgstress connects straight to `<cluster>-rw` / `-ro`, not through the
+PgBouncer pooler: it sets `statement_timeout` as a connection startup
+parameter, which PgBouncer rejects.
+
 ## Development
 
 ```bash

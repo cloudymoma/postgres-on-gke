@@ -21,10 +21,13 @@ GKE provisioning, topology presets, backups, and load balancing.
 - **Demo**: zonal GKE cluster, 1 Postgres instance, no backups. For kicking tires.
 - **Production**: regional GKE cluster in `us-central1` across 3 zones on
   `c4-highmem-4` nodes (5th Gen Intel Xeon Emerald Rapids + Titanium I/O engine)
-  with `hyperdisk-balanced` storage, 1 primary + 2 streaming replicas pinned
-  one-per-zone, automatic failover, continuous WAL archiving + daily base
-  backups to GCS (Workload Identity, no key files), internal TCP load balancers
-  for read-write and read-only traffic, optional PgBouncer.
+  with `hyperdisk-balanced` storage, 1 primary + 2 streaming replicas (one
+  per node; with the default 1 node per zone that is one per zone), automatic
+  failover, continuous WAL archiving + daily base backups to GCS (Workload
+  Identity, no key files), internal TCP load balancers for read-write and
+  read-only traffic, optional PgBouncer. GKE node upgrades are confined to a
+  daily maintenance window (default 02:00–06:00 UTC, `MAINTENANCE_START` /
+  `MAINTENANCE_END` in `config.sh`).
 
 The operator creates three ClusterIP services automatically:
 `<cluster>-rw` (primary), `<cluster>-ro` (replicas), `<cluster>-r` (any).
@@ -77,9 +80,10 @@ Get credentials for the auto-created `app` database:
 ```
 
 Note: `templates/pg.prod.yml` enforces host anti-affinity (`kubernetes.io/hostname: required`)
-to guarantee 1 pod per physical node, paired with `topologySpreadConstraints` across
-zones. To scale beyond 3 instances, scale the GKE node pool accordingly (`./bin/gke.sh scale 2` = 6 nodes)
-so new instances find dedicated host machines.
+to guarantee 1 pod per node, plus a best-effort (`ScheduleAnyway`) spread across
+zones. To scale beyond 3 instances, scale the GKE node pool first (`./bin/gke.sh scale 2` = 6 nodes)
+so new instances find dedicated nodes; `pg.sh scale` refuses otherwise. With more
+than one node per zone, two instances may share a zone.
 
 ### Scale up (vertical)
 
@@ -119,9 +123,12 @@ The bucket keeps deleted objects for 35 more days (Object Versioning). On demand
 ./bin/pg.sh backup
 ```
 
-Restore creates a *new* cluster from GCS (never in-place):
+Restore creates a *new* 3-instance cluster from GCS (never in-place), next to
+the original. Each instance needs its own node, and the default 3 nodes are
+already taken by `pg-main`, so add nodes first:
 
 ```bash
+./bin/gke.sh scale 2                                    # 6 nodes: room for both clusters
 PG_CLUSTER=pg-main-restored ./bin/gcs_backup.sh setup   # WI binding for the new cluster
 source ./config.sh && render templates/pg.restore.yml | kubectl apply -f -
 ```
@@ -147,7 +154,8 @@ Set `recoveryTarget.targetTime` in `templates/pg.restore.yml` for PITR.
 Automatic. Test it:
 
 ```bash
-kubectl -n pg delete pod pg-main-1   # a replica is promoted in seconds
+primary=$(kubectl -n pg get cluster pg-main -o jsonpath='{.status.currentPrimary}')
+kubectl -n pg delete pod "$primary"   # a replica is promoted in seconds
 ./bin/pg.sh status
 ```
 
@@ -167,6 +175,26 @@ cd stress && ./run.sh build && ./run.sh grant
 
 See `stress/README.md`.
 
+## Terraform (optional)
+
+`terraform/gcp/` creates the same GCP resources as `./bin/gke.sh create` +
+`./bin/gcs_backup.sh setup` (cluster, node pool, backup bucket, GSA, Workload
+Identity binding). Keep its variables in line with `config.sh` (`region`,
+`cluster_name`, `pg_namespace`, `pg_cluster_name`, `maintenance_start/end`);
+the bucket (`<project>-pg-backups`) and GSA (`pg-backup`) names are fixed and
+match the `config.sh` defaults. Then continue with the scripts:
+
+```bash
+cd terraform/gcp && terraform init && terraform apply -var project_id=<your-project> && cd ../..
+./bin/gke.sh credentials
+./bin/cnpg.sh install
+./bin/pg.sh deploy prod
+./bin/lb.sh deploy
+```
+
+The cluster has `deletion_protection = false`, so `terraform destroy` removes
+it; the bucket has `force_destroy = false`, so backups survive.
+
 ## Repo structure
 
 ```
@@ -175,7 +203,7 @@ bin/
   demo.sh              # one-command PoC (up / status / clean)
   gke.sh               # GKE cluster create / credentials / scale / maintenance / status / delete
   cnpg.sh              # operator + backup plugin install (idempotent; re-run to upgrade) / status
-  pg.sh                # deploy / status / password / psql / scale / backup / pooler
+  pg.sh                # deploy / status / password / psql / scale / backup / pooler / destroy
   gcs_backup.sh        # GCS bucket + Workload Identity setup
   lb.sh                # internal load balancers
 templates/
@@ -188,7 +216,7 @@ templates/
   lb.yml               # internal TCP LBs (rw + ro)
 terraform/gcp/         # optional IaC path for the GCP-side resources
 stress/                # pgstress load generator + HTML report (see stress/README.md)
-Makefile               # init_demo / init_prod presets
+Makefile               # init_demo / init_prod presets, status, clean_demo / clean_prod
 ```
 
 ## Mapping from elastic-on-gke
