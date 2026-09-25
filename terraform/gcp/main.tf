@@ -31,6 +31,17 @@ resource "google_container_cluster" "pg" {
 
   ip_allocation_policy {}
 
+  # Daily window (UTC) for GKE node auto-upgrades/repairs; mirrors
+  # MAINTENANCE_START/MAINTENANCE_END in config.sh. An end at/before the start
+  # crosses midnight.
+  maintenance_policy {
+    recurring_window {
+      start_time = "2000-01-01T${var.maintenance_start}:00Z"
+      end_time   = "2000-01-${tonumber(replace(var.maintenance_end, ":", "")) > tonumber(replace(var.maintenance_start, ":", "")) ? "01" : "02"}T${var.maintenance_end}:00Z"
+      recurrence = "FREQ=DAILY"
+    }
+  }
+
   deletion_protection = false
 }
 

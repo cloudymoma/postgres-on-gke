@@ -167,7 +167,7 @@ See `stress/README.md`.
 config.sh              # single place for project, region, versions, names
 bin/
   demo.sh              # one-command PoC (up / status / clean)
-  gke.sh               # GKE cluster create / scale / delete
+  gke.sh               # GKE cluster create / credentials / scale / maintenance / status / delete
   cnpg.sh              # operator + backup plugin install (idempotent; re-run to upgrade) / status
   pg.sh                # deploy / status / password / psql / scale / backup / pooler
   gcs_backup.sh        # GCS bucket + Workload Identity setup

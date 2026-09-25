@@ -13,6 +13,10 @@ MACHINE_TYPE="${MACHINE_TYPE:-c4-highmem-4}"
 NUM_NODES="${NUM_NODES:-1}"                # per zone (regional cluster spans 3 zones)
 DEMO_MACHINE_TYPE="${DEMO_MACHINE_TYPE:-e2-standard-2}"
 DEMO_NUM_NODES="${DEMO_NUM_NODES:-2}"
+# Daily window (UTC, HH:MM) in which GKE may auto-upgrade/repair nodes. Each
+# node drain restarts or switches over one Postgres pod. GKE needs >= 4h.
+MAINTENANCE_START="${MAINTENANCE_START:-02:00}"
+MAINTENANCE_END="${MAINTENANCE_END:-06:00}"
 
 # --- PostgreSQL / CloudNativePG -----------------------------------------
 NAMESPACE="${NAMESPACE:-pg}"

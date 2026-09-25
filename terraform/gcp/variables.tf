@@ -38,3 +38,23 @@ variable "pg_cluster_name" {
   type        = string
   default     = "pg-main"
 }
+
+variable "maintenance_start" {
+  description = "Daily GKE maintenance window start, HH:MM UTC (must match config.sh MAINTENANCE_START)"
+  type        = string
+  default     = "02:00"
+  validation {
+    condition     = can(regex("^([01][0-9]|2[0-3]):[0-5][0-9]$", var.maintenance_start))
+    error_message = "maintenance_start must be HH:MM (UTC)."
+  }
+}
+
+variable "maintenance_end" {
+  description = "Daily GKE maintenance window end, HH:MM UTC; GKE needs at least 4h (must match config.sh MAINTENANCE_END)"
+  type        = string
+  default     = "06:00"
+  validation {
+    condition     = can(regex("^([01][0-9]|2[0-3]):[0-5][0-9]$", var.maintenance_end))
+    error_message = "maintenance_end must be HH:MM (UTC)."
+  }
+}
