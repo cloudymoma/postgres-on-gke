@@ -84,9 +84,13 @@ so new instances find dedicated host machines.
 ### Scale up (vertical)
 
 Edit `resources`/`storage` in `templates/pg.prod.yml` and re-apply
-(`./bin/pg.sh deploy prod`). The operator restarts replicas first, then does
-a controlled switchover — near-zero downtime. Storage can only grow, and
-online only if the storage class allows volume expansion (`hyperdisk-balanced` does).
+(`./bin/pg.sh deploy prod`). The operator restarts replicas first, then
+switches over to an updated replica (`primaryUpdateMethod: switchover`) —
+writes pause for a few seconds. Don't change `PG_IMAGE` and
+`postgresql.parameters` in the same apply; the operator rejects that. The
+rollout starts after `deploy` returns; follow it with `./bin/pg.sh status`.
+Storage can only grow, and online only if the storage class allows volume
+expansion (`hyperdisk-balanced` does).
 
 ### Scale GKE nodes
 

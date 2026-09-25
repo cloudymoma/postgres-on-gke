@@ -5,7 +5,7 @@
 # Scaling:
 #   - reads:    bump `instances` (or ./bin/pg.sh scale <n>)
 #   - vertical: edit resources/storage below and re-apply; the operator
-#               rolls replicas first, then performs a switchover.
+#               rolls replicas first, then switches over (primaryUpdateMethod).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -15,6 +15,10 @@ spec:
   instances: 3
   imageName: ${PG_IMAGE}
   primaryUpdateStrategy: unsupervised
+  # Rolling updates end with a switchover to an already-updated replica rather
+  # than restarting the primary in place (CloudNativePG's default). Note: an
+  # update may then not change imageName and postgresql.parameters together.
+  primaryUpdateMethod: switchover
 
   # Workload Identity: pods run as the K8s SA named after the cluster;
   # this annotation maps it to the GSA created by bin/gcs_backup.sh.
@@ -37,9 +41,10 @@ spec:
         matchLabels:
           cnpg.io/cluster: ${PG_CLUSTER}
 
-  # Sized to maximize c4-highmem-4 (4 vCPU, 31 GiB RAM).
-  # Matching requests == limits grants Kubernetes "Guaranteed" QoS class,
-  # preventing the Linux OOM killer from terminating the database under pressure.
+  # Sized to maximize c4-highmem-4 (4 vCPU, 31 GiB RAM). requests == limits
+  # reserves the full amount for Postgres. The pod is still "Burstable", not
+  # "Guaranteed": the Barman plugin sidecar is deliberately left without limits
+  # so WAL archiving and base backups are never throttled or OOM-killed.
   resources:
     requests:
       cpu: "3"
