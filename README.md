@@ -131,8 +131,10 @@ Set `recoveryTarget.targetTime` in `templates/pg.restore.yml` for PITR.
 - **Postgres major**: CloudNativePG supports offline in-place major upgrades
   (bump the image major version — read the release notes first), or
   blue/green via a new cluster bootstrapped from a backup.
-- **Operator**: bump versions in `config.sh`, re-run `./bin/cnpg.sh install`.
-  Operator upgrades don't restart database pods.
+- **Operator / backup plugin**: bump versions in `config.sh`, re-run
+  `./bin/cnpg.sh install`. This triggers a rolling restart of every Postgres
+  pod ending in a switchover (seconds of write downtime), so do it in a
+  quiet period.
 
 ### Failover
 
