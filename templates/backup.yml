@@ -23,8 +23,13 @@ metadata:
   name: ${PG_CLUSTER}-daily
   namespace: ${NAMESPACE}
 spec:
-  # 6-field cron (seconds first): daily at 02:00 UTC
-  schedule: "0 0 2 * * *"
+  # 6-field cron (seconds first): daily at 07:00 UTC, outside the GKE
+  # maintenance window (02:00-06:00 UTC by default, config.sh) so a node
+  # drain can't interrupt the base backup.
+  schedule: "0 0 7 * * *"
+  # Take the first base backup right away: until one exists, WAL alone
+  # cannot be restored, so there would be no recovery point for up to 24h.
+  immediate: true
   backupOwnerReference: self
   cluster:
     name: ${PG_CLUSTER}

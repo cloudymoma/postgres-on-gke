@@ -106,8 +106,10 @@ expansion (`hyperdisk-balanced` does).
 
 ### Backups & point-in-time recovery
 
-WAL archiving is continuous and a base backup runs daily at 02:00 UTC
-(`templates/backup.yml`, 30-day retention). On demand:
+WAL archiving is continuous; the first base backup is taken right after
+deploy and then daily at 07:00 UTC, after the maintenance window
+(`templates/backup.yml`, 30-day retention).
+The bucket keeps deleted objects for 35 more days (Object Versioning). On demand:
 
 ```bash
 ./bin/pg.sh backup
