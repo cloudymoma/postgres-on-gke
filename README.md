@@ -14,7 +14,7 @@ GKE provisioning, topology presets, backups, and load balancing.
 | CloudNativePG operator | 1.30.0 |
 | Barman Cloud plugin (backups) | 0.14.0 |
 | cert-manager (plugin prerequisite) | v1.21.1 |
-| PostgreSQL image | `ghcr.io/cloudnative-pg/postgresql:18` |
+| PostgreSQL image | `ghcr.io/cloudnative-pg/postgresql:18.6` |
 
 ## Architecture
 
@@ -120,8 +120,10 @@ Set `recoveryTarget.targetTime` in `templates/pg.restore.yml` for PITR.
 
 ### Upgrades
 
-- **Postgres minor** (e.g. 18.1 → 18.2): bump `PG_IMAGE` in `config.sh`,
-  re-run `./bin/pg.sh deploy prod`. Rolling update, replicas first.
+- **Postgres minor** (e.g. 18.6 → 18.7): bump the pinned tag in `PG_IMAGE`
+  (`config.sh`), re-run `./bin/pg.sh deploy prod`. Rolling update, replicas
+  first, then a switchover. Keep the tag pinned to a minor: a floating tag
+  like `:18` lets rescheduled pods silently pull a newer minor.
 - **Postgres major**: CloudNativePG supports offline in-place major upgrades
   (bump the image major version — read the release notes first), or
   blue/green via a new cluster bootstrapped from a backup.

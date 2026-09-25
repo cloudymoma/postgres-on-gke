@@ -17,7 +17,7 @@ DEMO_NUM_NODES="${DEMO_NUM_NODES:-2}"
 # --- PostgreSQL / CloudNativePG -----------------------------------------
 NAMESPACE="${NAMESPACE:-pg}"
 PG_CLUSTER="${PG_CLUSTER:-pg-main}"
-PG_IMAGE="${PG_IMAGE:-ghcr.io/cloudnative-pg/postgresql:18}"
+PG_IMAGE="${PG_IMAGE:-ghcr.io/cloudnative-pg/postgresql:18.6}"   # pin the minor; bump to upgrade
 
 CNPG_VERSION="${CNPG_VERSION:-1.30.0}"
 BARMAN_PLUGIN_VERSION="${BARMAN_PLUGIN_VERSION:-0.14.0}"
