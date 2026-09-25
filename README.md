@@ -104,6 +104,10 @@ expansion (`hyperdisk-balanced` does).
 ./bin/pg.sh pooler            # PgBouncer (transaction pooling) at <cluster>-pooler-rw:5432
 ```
 
+Two PgBouncer pods, spread across nodes when possible. Transaction pooling
+means session state (`SET`, session advisory locks, `LISTEN`) is not reliable:
+the next transaction may run on a different server connection.
+
 ### Backups & point-in-time recovery
 
 WAL archiving is continuous; the first base backup is taken right after

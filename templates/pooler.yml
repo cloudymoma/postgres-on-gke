@@ -16,3 +16,16 @@ spec:
     parameters:
       max_client_conn: "1000"
       default_pool_size: "50"
+  # Prefer different nodes so one node loss doesn't take out both poolers.
+  template:
+    spec:
+      containers: []
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    cnpg.io/poolerName: ${PG_CLUSTER}-pooler-rw
