@@ -56,6 +56,11 @@ spec:
       checkpoint_completion_target: "0.9"  # Smooths out disk I/O on Hyperdisk Balanced
       random_page_cost: "1.1"              # Optimized for SSD/Hyperdisk low-latency reads
       max_connections: "200"
+      # HA replication slots are on by default; without a cap, a replica that
+      # is down for hours makes the primary keep WAL until the 20Gi WAL volume
+      # fills and Postgres stops. Past the cap, the replica has to catch up
+      # from the WAL archive in GCS instead.
+      max_slot_wal_keep_size: "10GB"
 
   bootstrap:
     recovery:
