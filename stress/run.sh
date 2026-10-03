@@ -8,7 +8,7 @@
 #   ./run.sh report out/a/results.json out/b/results.json   # compare runs -> report.html
 #   ./run.sh clean                          # delete leftover pgstress Jobs/ConfigMaps
 #
-# Env overrides: IMAGE, CPU (default 1), CPU_REQUEST (default 500m), MEMORY (default 1Gi), KEEP=1 (don't delete the Job).
+# Env overrides: IMAGE, CPU (default 1), CPU_REQUEST (default 100m), MEMORY (default 1Gi), KEEP=1 (don't delete the Job).
 set -euo pipefail
 self="$(realpath "$0")"
 cd "$(dirname "$self")"
@@ -18,7 +18,9 @@ require_project
 
 IMAGE="${IMAGE:-${REGION}-docker.pkg.dev/${PROJECT_ID}/pgstress/pgstress:latest}"
 CPU="${CPU:-1}"
-CPU_REQUEST="${CPU_REQUEST:-500m}"
+# 100m so the Job schedules on the default cluster, where every node runs a
+# 3-CPU Postgres pod plus GKE system pods; the 1-CPU limit still lets it burst.
+CPU_REQUEST="${CPU_REQUEST:-100m}"
 MEMORY="${MEMORY:-1Gi}"
 export IMAGE CPU CPU_REQUEST MEMORY
 

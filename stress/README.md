@@ -52,7 +52,13 @@ Then scale the database and run again:
 ```
 
 Options: `CPU=4 MEMORY=2Gi ./run.sh run …` sizes the load-generator pod
-(default `CPU=1` limit / `CPU_REQUEST=500m` request / `1Gi` RAM). `KEEP=1` leaves the Job for inspection.
+(default `CPU=1` limit / `CPU_REQUEST=100m` request / `1Gi` RAM). `KEEP=1` leaves the Job for inspection.
+
+On the default 3-node production cluster every node runs Postgres, so the
+load generator shares a node with an instance and only gets the CPU Postgres
+leaves idle. For clean numbers add nodes first (`../bin/gke.sh scale 2`): the
+Job prefers nodes without a Postgres pod. If the report's load-generator CPU
+panel sits near its limit, the client is the bottleneck.
 
 ## Scenarios
 
