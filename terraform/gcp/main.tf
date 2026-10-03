@@ -55,6 +55,7 @@ resource "google_container_node_pool" "pg_nodes" {
 
   node_config {
     machine_type = var.machine_type
+    disk_type    = var.boot_disk_type
     workload_metadata_config {
       mode = "GKE_METADATA"
     }

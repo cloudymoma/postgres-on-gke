@@ -48,6 +48,7 @@ create() {
       --project "$PROJECT_ID" \
       --region "$REGION" \
       --machine-type "$MACHINE_TYPE" \
+      --disk-type "$BOOT_DISK_TYPE" \
       --num-nodes "$NUM_NODES" \
       --workload-pool "${PROJECT_ID}.svc.id.goog" \
       --enable-ip-alias \

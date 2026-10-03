@@ -49,6 +49,12 @@ make init_demo            # ≈ ./bin/demo.sh up  (takes ~10 min)
 
 ## Production walkthrough
 
+> Production nodes boot from `BOOT_DISK_TYPE` (default `hyperdisk-balanced`;
+> C4 cannot boot from PD). If you change `MACHINE_TYPE` to a family without
+> Hyperdisk (N2, E2), set `BOOT_DISK_TYPE=pd-balanced` **and** change
+> `storageClass` in `templates/pg.prod.yml` / `pg.restore.yml` (e.g. to
+> `standard-rwo`): the data and WAL disks are Hyperdisk too.
+
 Edit `config.sh` (or export overrides), then:
 
 ```bash
@@ -180,7 +186,8 @@ See `stress/README.md`.
 `terraform/gcp/` creates the same GCP resources as `./bin/gke.sh create` +
 `./bin/gcs_backup.sh setup` (cluster, node pool, backup bucket, GSA, Workload
 Identity binding). Keep its variables in line with `config.sh` (`region`,
-`cluster_name`, `pg_namespace`, `pg_cluster_name`, `maintenance_start/end`);
+`cluster_name`, `machine_type`, `boot_disk_type`, `pg_namespace`,
+`pg_cluster_name`, `maintenance_start/end`);
 the bucket (`<project>-pg-backups`) and GSA (`pg-backup`) names are fixed and
 match the `config.sh` defaults. Then continue with the scripts:
 

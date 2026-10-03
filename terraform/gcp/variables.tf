@@ -21,6 +21,12 @@ variable "machine_type" {
   default     = "c4-highmem-4"
 }
 
+variable "boot_disk_type" {
+  description = "Node boot disk type; C4 cannot boot from PD. Use pd-balanced for a machine_type without Hyperdisk (must match config.sh BOOT_DISK_TYPE)"
+  type        = string
+  default     = "hyperdisk-balanced"
+}
+
 variable "nodes_per_zone" {
   description = "Nodes per zone (regional cluster spans 3 zones)"
   type        = number

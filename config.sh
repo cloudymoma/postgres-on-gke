@@ -10,6 +10,9 @@ ZONE="${ZONE:-${REGION}-a}"                # used by the demo (zonal) cluster
 # --- GKE ---------------------------------------------------------------
 GKE_CLUSTER="${GKE_CLUSTER:-pg-gke}"
 MACHINE_TYPE="${MACHINE_TYPE:-c4-highmem-4}"
+# Prod node boot disk. C4 cannot boot from PD, so don't leave it to the API
+# default. Use pd-balanced for a MACHINE_TYPE without Hyperdisk (N2, E2).
+BOOT_DISK_TYPE="${BOOT_DISK_TYPE:-hyperdisk-balanced}"
 NUM_NODES="${NUM_NODES:-1}"                # per zone (regional cluster spans 3 zones)
 DEMO_MACHINE_TYPE="${DEMO_MACHINE_TYPE:-e2-standard-2}"
 DEMO_NUM_NODES="${DEMO_NUM_NODES:-2}"
