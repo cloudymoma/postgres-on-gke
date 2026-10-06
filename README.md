@@ -185,6 +185,38 @@ kubectl -n pg delete pod "$primary"   # a replica is promoted in seconds
 ./bin/pg.sh status
 ```
 
+## Before production
+
+The defaults are stable but deliberately simple. Before real traffic:
+
+1. **Check CPU fit** after the first `make init_prod`: each node must have
+   3000m free for its Postgres pod.
+   `kubectl describe node | grep -A8 'Allocated resources'`. If an instance
+   stays Pending with `Insufficient cpu`, lower `requests.cpu` to `2.5` in
+   `templates/pg.prod.yml` (keep the `3` limit) and re-apply.
+2. **Check alerting works**: run `setup` with `ALERT_EMAIL` set, confirm
+   `cnpg_collector_up` has data in Metrics Explorer, and that the backup
+   alert clears once the first base backup finishes.
+3. **Decide what this repo leaves to you**:
+   - *Network*: nodes get public IPs on the default VPC. Consider private
+     nodes (`--enable-private-nodes`, plus Cloud NAT for image pulls) on a
+     dedicated VPC.
+   - *Node identity*: nodes use the Compute Engine default service account
+     with the `cloud-platform` scope. Use a dedicated least-privilege one.
+   - *Who can connect*: any pod in the cluster can reach `<cluster>-rw:5432`.
+     A NetworkPolicy (needs `--enable-network-policy` or Dataplane V2) can
+     limit it to your app namespaces; it must still allow the operator
+     (`cnpg-system`) and the instances themselves.
+   - *Data-loss window (RPO)*: replication is asynchronous, so writes not
+     yet streamed can be lost if the primary's zone fails. For RPO 0 set
+     `postgresql.synchronous: {method: any, number: 1, dataDurability: required}`;
+     every commit then waits for a replica in another zone, and writes block
+     if no replica is healthy (`preferred` keeps writing, asynchronously,
+     while degraded).
+   - *Region loss*: the backup bucket lives in `REGION`, like the cluster.
+     Use a dual- or multi-region bucket if you need to survive a region
+     outage.
+
 ## Load / stress testing
 
 `stress/` holds **pgstress**, a multi-threaded Go load generator that runs as
