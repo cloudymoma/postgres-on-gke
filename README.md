@@ -199,8 +199,9 @@ cd terraform/gcp && terraform init && terraform apply -var project_id=<your-proj
 ./bin/lb.sh deploy
 ```
 
-The cluster has `deletion_protection = false`, so `terraform destroy` removes
-it; the bucket has `force_destroy = false`, so backups survive.
+The cluster has `deletion_protection = true`: to tear it down, set it to
+`false` and `terraform apply` before `terraform destroy`. The bucket has
+`force_destroy = false`, so backups survive.
 
 ## Repo structure
 

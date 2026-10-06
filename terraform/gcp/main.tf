@@ -42,7 +42,8 @@ resource "google_container_cluster" "pg" {
     }
   }
 
-  deletion_protection = false
+  # Blocks `terraform destroy`; set to false and apply first to tear down.
+  deletion_protection = true
 }
 
 resource "google_container_node_pool" "pg_nodes" {
