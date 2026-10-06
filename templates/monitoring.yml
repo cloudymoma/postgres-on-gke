@@ -1,0 +1,16 @@
+# Google Managed Prometheus scrapes the CloudNativePG exporter (port
+# "metrics", 9187) on every instance pod. Series land in Cloud Monitoring
+# with job="${PG_CLUSTER}", which templates/alerts/*.yml filter on.
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: ${PG_CLUSTER}
+  namespace: ${NAMESPACE}
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: ${PG_CLUSTER}
+      cnpg.io/podRole: instance
+  endpoints:
+    - port: metrics
+      interval: 30s

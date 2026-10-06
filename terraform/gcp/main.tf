@@ -31,6 +31,13 @@ resource "google_container_cluster" "pg" {
 
   ip_allocation_policy {}
 
+  # Managed Prometheus collection, used by templates/monitoring.yml.
+  monitoring_config {
+    managed_prometheus {
+      enabled = true
+    }
+  }
+
   # Daily window (UTC) for GKE node auto-upgrades/repairs; mirrors
   # MAINTENANCE_START/MAINTENANCE_END in config.sh. An end at/before the start
   # crosses midnight.

@@ -1,0 +1,21 @@
+# Cloud Monitoring alert policy, created by bin/monitoring.sh.
+# The daily base backup (templates/backup.yml) has not succeeded for >26h,
+# or none has ever succeeded. The 1h duration covers the first backup after deploy.
+displayName: "${PG_CLUSTER} (${NAMESPACE}): no base backup in 26h"
+userLabels: {pg_cluster: "${PG_CLUSTER}", pg_namespace: "${NAMESPACE}"}
+severity: ERROR
+combiner: OR
+conditions:
+  - displayName: last successful base backup too old or missing
+    conditionPrometheusQueryLanguage:
+      query: >-
+        (time() - max(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="${NAMESPACE}",job="${PG_CLUSTER}"}) > 93600)
+        or absent(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="${NAMESPACE}",job="${PG_CLUSTER}"})
+      duration: 3600s
+      evaluationInterval: 300s
+      disableMetricValidation: true
+documentation:
+  mimeType: text/markdown
+  content: >-
+    No recent base backup in GCS. Check `kubectl -n ${NAMESPACE} get backup`
+    and the ScheduledBackup `${PG_CLUSTER}-daily`.

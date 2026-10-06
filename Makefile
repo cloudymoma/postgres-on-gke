@@ -7,13 +7,14 @@
 init_demo:
 	./bin/demo.sh up
 
-# 3-instance HA Postgres across 3 zones with GCS backups and internal LBs.
+# 3-instance HA Postgres across 3 zones with GCS backups, internal LBs and alerts.
 init_prod:
 	./bin/gke.sh create
 	./bin/cnpg.sh install
 	./bin/gcs_backup.sh setup
 	./bin/pg.sh deploy prod
 	./bin/lb.sh deploy
+	./bin/monitoring.sh setup
 
 status:
 	./bin/pg.sh status

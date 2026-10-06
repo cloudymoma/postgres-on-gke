@@ -42,6 +42,7 @@ create() {
       --num-nodes "$DEMO_NUM_NODES" \
       --workload-pool "${PROJECT_ID}.svc.id.goog" \
       --enable-ip-alias \
+      --enable-managed-prometheus \
       "${MAINT_FLAGS[@]}"
   else
     gcloud container clusters create "$GKE_CLUSTER" \
@@ -52,6 +53,7 @@ create() {
       --num-nodes "$NUM_NODES" \
       --workload-pool "${PROJECT_ID}.svc.id.goog" \
       --enable-ip-alias \
+      --enable-managed-prometheus \
       "${MAINT_FLAGS[@]}"
   fi
   credentials "$profile"

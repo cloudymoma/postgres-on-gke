@@ -1,0 +1,20 @@
+# Cloud Monitoring alert policy, created by bin/monitoring.sh.
+# Any volume (data or WAL) of an instance pod is over 80% full. Uses the GKE
+# system metric kubernetes.io/pod/volume/utilization. Metric validation is
+# left on, so a wrong name fails `monitoring.sh setup` instead of never firing.
+displayName: "${PG_CLUSTER} (${NAMESPACE}): volume over 80%"
+userLabels: {pg_cluster: "${PG_CLUSTER}", pg_namespace: "${NAMESPACE}"}
+severity: ERROR
+combiner: OR
+conditions:
+  - displayName: pod volume utilization above 0.8
+    conditionPrometheusQueryLanguage:
+      query: >-
+        max by (pod_name, volume_name) (kubernetes_io:pod_volume_utilization{namespace_name="${NAMESPACE}",pod_name=~"${PG_CLUSTER}-[0-9]+"}) > 0.8
+      duration: 600s
+      evaluationInterval: 60s
+documentation:
+  mimeType: text/markdown
+  content: >-
+    A Postgres volume is filling. Grow `storage`/`walStorage` in
+    templates/pg.prod.yml and re-apply (hyperdisk-balanced expands online).

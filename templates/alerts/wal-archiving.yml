@@ -1,0 +1,22 @@
+# Cloud Monitoring alert policy, created by bin/monitoring.sh.
+# If archiving to GCS keeps failing, WAL piles up until the WAL volume fills
+# and the primary stops. Expression from CloudNativePG's sample rules.
+displayName: "${PG_CLUSTER} (${NAMESPACE}): WAL archiving failing"
+userLabels: {pg_cluster: "${PG_CLUSTER}", pg_namespace: "${NAMESPACE}"}
+severity: CRITICAL
+combiner: OR
+conditions:
+  - displayName: last archive attempt failed
+    conditionPrometheusQueryLanguage:
+      query: >-
+        (cnpg_pg_stat_archiver_last_failed_time{namespace="${NAMESPACE}",job="${PG_CLUSTER}"}
+        - cnpg_pg_stat_archiver_last_archived_time{namespace="${NAMESPACE}",job="${PG_CLUSTER}"}) > 1
+      duration: 300s
+      evaluationInterval: 60s
+      disableMetricValidation: true
+documentation:
+  mimeType: text/markdown
+  content: >-
+    Postgres cannot archive WAL to GCS. Check the plugin-barman-cloud container
+    logs on the primary and the Workload Identity binding
+    (`./bin/gcs_backup.sh setup`).

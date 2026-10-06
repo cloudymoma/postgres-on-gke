@@ -1,0 +1,21 @@
+# Cloud Monitoring alert policy, created by bin/monitoring.sh.
+# WAL on an instance exceeds 16GiB, 80% of the 20Gi walStorage in
+# templates/pg.prod.yml (update the threshold if you resize it). Catches
+# archiving stalls and slot retention before the volume fills.
+displayName: "${PG_CLUSTER} (${NAMESPACE}): WAL volume over 80%"
+userLabels: {pg_cluster: "${PG_CLUSTER}", pg_namespace: "${NAMESPACE}"}
+severity: CRITICAL
+combiner: OR
+conditions:
+  - displayName: pg_wal size above 16GiB
+    conditionPrometheusQueryLanguage:
+      query: >-
+        max by (pod) (cnpg_collector_pg_wal{namespace="${NAMESPACE}",job="${PG_CLUSTER}",value="size"}) > 17179869184
+      duration: 300s
+      evaluationInterval: 60s
+      disableMetricValidation: true
+documentation:
+  mimeType: text/markdown
+  content: >-
+    pg_wal is filling. Usual causes: WAL archiving failing (see that alert) or
+    a lagging replica holding a replication slot (capped at 10GB).

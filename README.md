@@ -69,6 +69,7 @@ which is equivalent to:
 ./bin/gcs_backup.sh setup     # GCS bucket + GSA + Workload Identity binding
 ./bin/pg.sh deploy prod       # ObjectStore + 3-instance Cluster
 ./bin/lb.sh deploy            # internal LBs for VPC-internal access
+./bin/monitoring.sh setup     # Managed Prometheus scraping + Cloud Monitoring alerts
 ```
 
 Get credentials for the auto-created `app` database:
@@ -155,6 +156,25 @@ Set `recoveryTarget.targetTime` in `templates/pg.restore.yml` for PITR.
   pod ending in a switchover (seconds of write downtime), so do it in a
   quiet period.
 
+### Monitoring & alerts
+
+`./bin/monitoring.sh setup` (part of `make init_prod`) makes Google Managed
+Prometheus scrape the CloudNativePG exporter on each instance and creates five
+Cloud Monitoring alert policies (`templates/alerts/`):
+
+| Alert | Severity | Fires when |
+|---|---|---|
+| WAL archiving failing | critical | the last archive attempt to GCS failed, for 5 min |
+| WAL volume over 80% | critical | `pg_wal` > 16GiB of the 20Gi WAL volume |
+| no base backup in 26h | error | the last successful base backup is older than 26h, or none exists |
+| volume over 80% | error | any data/WAL volume of an instance is > 80% full |
+| replica lagging or not streaming | warning | lag > 5 min, or a replica has no WAL receiver |
+
+Set `ALERT_EMAIL=you@example.com` before `setup` to get emails; otherwise
+alerts only open incidents in the Cloud Monitoring console. `setup` skips
+policies that already exist; to change one, `./bin/monitoring.sh clean`
+then `setup`. Metrics show up in Metrics Explorer under the `cnpg_` prefix.
+
 ### Failover
 
 Automatic. Test it:
@@ -197,6 +217,7 @@ cd terraform/gcp && terraform init && terraform apply -var project_id=<your-proj
 ./bin/cnpg.sh install
 ./bin/pg.sh deploy prod
 ./bin/lb.sh deploy
+./bin/monitoring.sh setup
 ```
 
 The cluster has `deletion_protection = true`: to tear it down, set it to
@@ -214,6 +235,7 @@ bin/
   pg.sh                # deploy / status / password / psql / scale / backup / pooler / destroy
   gcs_backup.sh        # GCS bucket + Workload Identity setup
   lb.sh                # internal load balancers
+  monitoring.sh        # Managed Prometheus scraping + Cloud Monitoring alert policies
 templates/
   pg.demo.yml          # 1-instance Cluster
   pg.prod.yml          # 3-instance HA Cluster, C4 + Hyperdisk, host anti-affinity + zone spread, GCS archiving
@@ -222,6 +244,8 @@ templates/
   pg.restore.yml       # PITR: new cluster bootstrapped from GCS
   pooler.yml           # PgBouncer
   lb.yml               # internal TCP LBs (rw + ro)
+  monitoring.yml       # PodMonitoring (Managed Prometheus) for the instance pods
+  alerts/              # Cloud Monitoring alert policies (PromQL), one per file
 terraform/gcp/         # optional IaC path for the GCP-side resources
 stress/                # pgstress load generator + HTML report (see stress/README.md)
 Makefile               # init_demo / init_prod presets, status, clean_demo / clean_prod

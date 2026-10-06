@@ -1,0 +1,28 @@
+# Cloud Monitoring alert policy, created by bin/monitoring.sh.
+# A replica is more than 5 minutes behind, or is in recovery without a WAL
+# receiver. Expressions from CloudNativePG's sample rules.
+displayName: "${PG_CLUSTER} (${NAMESPACE}): replica lagging or not streaming"
+userLabels: {pg_cluster: "${PG_CLUSTER}", pg_namespace: "${NAMESPACE}"}
+severity: WARNING
+combiner: OR
+conditions:
+  - displayName: replication lag above 300s
+    conditionPrometheusQueryLanguage:
+      query: >-
+        cnpg_pg_replication_lag{namespace="${NAMESPACE}",job="${PG_CLUSTER}"} > 300
+      duration: 300s
+      evaluationInterval: 60s
+      disableMetricValidation: true
+  - displayName: replica not receiving WAL
+    conditionPrometheusQueryLanguage:
+      query: >-
+        cnpg_pg_replication_in_recovery{namespace="${NAMESPACE}",job="${PG_CLUSTER}"}
+        > cnpg_pg_replication_is_wal_receiver_up{namespace="${NAMESPACE}",job="${PG_CLUSTER}"}
+      duration: 300s
+      evaluationInterval: 60s
+      disableMetricValidation: true
+documentation:
+  mimeType: text/markdown
+  content: >-
+    A replica is behind or disconnected. Check `./bin/pg.sh status` and the
+    replica's postgres logs.
